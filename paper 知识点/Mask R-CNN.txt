@@ -1,0 +1,21 @@
+Mask R-CNN
+
+  									Abstract
+实现了一个简单，快速，扩展性良好的实例分割模型，Mask R-CNN.基于Faster R-CNN模型，在类别预测和bounding box回归的基础上有又新加了一个object mask的branch，达到了5fps.该模型的扩展性体现在可以延伸到人体姿态估计。算法结果比 COCO 2016的 winner 更优。
+
+
+
+								   Introduction
+
+1.instance segmentation正确的目标检测和每个instance的精确分割；目标检测要求检测出个体目标并用bounding box定位，分割要求在像素级别上对每个像素进行分类。
+2.Mask R-CNN在Faster R-CNN的基础上对每个ROI预测segmentation masks，这一branch和classification和bounding box regression是并行的，mask branch是一个小的FCN，应用在每一个ROI上来预测mask。
+3.作者发现，Faster R-CNN使用的ROI pooling在像素级别上会产生偏差；这对处理像素级问题的instance segmentation会产生很大的误差（错位 misalignment），因此作者提出了ROIAlign，能够保存提取的空间位置信息，并能够提高10-15%的mask accuracy.
+4.作者采用的方法将mask和class prediction进行解耦，预测出的mask是一个二元mask，即对每个类独立进行预测。
+
+							         Mask R-CNN
+							         
+1.损失函数
+L=L(cls)+L(box)+L(mask)
+前两个和Faster R-CNN里的一样，本文新加了一个Lmask，mask branch对每个ROI的输出是一个K*m*m的向量，代表在m*m的分辨率上，每个像素点被编码为k个二进制mask，Lmask作为平均二元交叉熵损失，对和ROI关联的Ground truth gt,假如gt的类别是k，则只有第k个mask对loss做贡献，其余的output对loss没有影响。
+2.不同于目标检测和分类将目标编码成短向量，mask需要处理像素与像素之间的关系，因此需要的是空间结构而不是经过fc的vector
+3.ROIAlign在映射ROI的feature map时不进行四舍五入[x/16],而是保留浮点值x/16,假如最后要归一化到7*7，则将H*W的feature map划分成49个小格子，每个格子采样4个点，使用双线性插值，可以对四个点的像素值进行average或者max。

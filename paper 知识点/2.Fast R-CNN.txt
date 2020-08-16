@@ -1,0 +1,25 @@
+Fast R-CNN
+较于R-CNN和SPPnet
+    比R-CNN快9倍,
+    比SPPnet快3倍;
+    0.3s处理一张图片;
+    PASCAL VOC 2012上达到了66%的mAP（R-CNN为62%）
+Advantages:
+    1.更高的mAP(R-CNN,SPPnet)
+    2.训练是single-stage，使用了多任务loss
+    3.训练能更新所有的网络层
+    4.不需要额外的存储空间存储feature cache
+    
+一.ROI pooling layer
+	1.ROI：即selective search后生成的region proposal
+	2.这一层所作的工作：将从image中挑选出来的region proposal映射到image经过CNN生成的feature map上后，将所有的映射归一化到一个fix好的大小，如果映射后的region proposal（PRP）大小为h*w，输出的大小设置为H*W，则需要把（h,w）划分为h/H × w/W个grid cell，然后在每个grid cell里用max pooling操作，输出（H,W）则为这一个region proposal的特征。
+	
+二.Fast R-CNN比R-CNN和SPPNet快的原因（或者后两者慢的原因）
+	1.根本原因在于R-CNN和SPPNet在training的时候采样的ROI（region proposal）都来自不同的image，他们在fine-tuning时使用的mini-batch=128个样本都来自不同的image，而每个ROI都有很大的感受野，经常涉及整张image，所以导致训练的时候很慢。
+	2.Fast R-CNN使用了另外一种策略————层次化采样。即首先确定从N个images里采样，每个image采样R/N个ROI，因为从同一张image里采样出来的ROI在前馈个BP时可以共享计算和内存，所以会比较快。文中N=2,R=128。
+	3.还提到说从同一张image中采样ROI用于training会导致模型收敛变慢，后续实际训练发现并不会。
+	
+	
+三.Mini-batch sampling(Fine-tuning阶段的训练数据也是这么采样的)
+	1.从N=2images里面总共采样R=128个RIO，64/image，在这128个ROI里面有25%的ROI（32）个被分为正类别，这些ROI符合以下性质：和ground-truth bounding box的IOU≥0.5，这些ROI的类别label被归为bounding box的类，u≥1【background的u=0】，剩下的ROI从那些和ground-truth bounding box的IOU∈[0.1,0.5)里面采样，类别被归为background，u=0，低于0.1的被启发式的看作难分样本。
+	

@@ -1,0 +1,76 @@
+**R-CNN较于之前提出的OverFeat算法，采用了区域选择的思想，将mAP提高了近30个百分点，论文主要有两个创新点**：
+1.将高容量的CNN应用于自下而上的区域提取，以便对对象进行定位和分割
+2.当训练数据集很稀缺时，对辅助任务进行有监督的预训练，然后进行特定领域的微调，可以显著提高性能
+
+**作者关注的两个问题：**
+1.用一个深的网络来定位物体
+2.只用很少数量的标注数据来训练一个高容量的模型
+
+**作者将前人研究融入时遇到的问题：**
+1.将滑窗算法结合的时候发现，网络中的高纬度神经单元有五个卷积层，并且有非常大的感受野（195*195*）和很大的步长(32*32),这导致对于滑窗算法的精确定位来说是一个很大的挑战。
+
+**对生成的几千个region proposal，每个大小都不相同，怎么送入同一个CNN？**
+解答：使用一种技术：affine image warping（放射图形变换）来将每个region proposal fix到固定大小（227，227，3）-> 4096
+
+
+**R-CNN算法步骤**
+1.输入image
+2.提取约2000个自下而上的region proposal
+3.用CNN计算每个region proposal的feature
+4.使用特定类的SVMs对每个feature进行分类
+
+模型设计
+	**Region proposals.**
+	
+	使用选择搜索（selective search）方法提取region proposal
+	
+	
+	**Feature extraction.**
+	
+	1.特征提取网络CNN的input image是（227，227，3），这意味着提取出的不同大小的区域需要进行fix,R-CNN选择了最简单的方法，没有考虑region的长宽比（aspect ratio）
+	
+	2.有一点需要注意：
+	
+	在将region缩放到CNN所要求的size时，文中为：
+	In order to compute features for a region proposal, we must first convert the image data in that region into a form that is compatible with the CNN (its architecture requires inputs of a fixed 227 × 227 pixel size). Of the many possible transformations of our arbitrary-shaped regions, we opt for the simplest. Regardless of the size or aspect ratio of the candidate region, we warp all pixels in a tight bounding box around it to the required size. Prior to warping, we dilate the tight bounding box so that at the warped size there are exactly p pixels of warped image context around the original box (we use p = 16).
+	
+	翻译为：
+	为了能计算region proposal的特征，我们首先将图片数据转换成CNN网络兼容的格式（CNN网络的结构要求227*227像素固定大小的输入图片数据）。在我们任意大小区域可能转换的方式中，我们选择最简单的。不管候选区域的大小和长宽比，我们将物体附近的包裹紧密的包围盒（bounding box）中的像素warp到要求的大小尺寸。在warping之前，我们先扩张包围紧密的包围盒, so that 在warped大小尺寸基础上在原有的包围盒周围恰好有p个像素的warped图像内容（我们用p=16）. 
+	我觉得这样的好处是稍微扩大region，将背景也包括进来来提供先验信息。
+
+测试
+
+	2000*4096的CNN输出接一个4096*N的SVM，N=类别数
+	CPU:53s/image
+	GPU:13s/image
+
+训练
+
+	**Supervised pre-training**
+
+	先把CNN在ILSVRC2012上预训练
+
+	**Domain-specific fine-tuning**
+
+	CNN平常的输入是image，R-CNN的任务是detection且送入的是region，所以要根据具体任务进行微调
+	方法：使用region proposal作为pre-trained CNN的输入，优化方法采用SGD，预训练的CNN由于是在ImageNet上，所以是1000个类，这里将他替换为N+1个类，额外的1是背景
+	细节：
+		1.训练集里每张图片都有人工标记的ground-truth（GD）,对每张图片，使用selective search提取出2000个region proposal（RP），并将每个RP边框向四周扩张16个像素后，把RP resize成227*227，得到2000个新的RP，
+		将含有待分类物体且与GD之间IOU大于0.5的RP作为可分类数据，IOU小于0.5的作为背景数据（类），使用SGD继续训练CNN
+		2.针对每类物体训练一个SVM
+			将每类图片的GD作为正样本，该图片所有与GD之间的IOU小于0.3的RP以及与该图片不同类别的所有其他图片的GD作为负样本，训练该类别的SVM
+			训练方法：将GD直接送入CNN，RP先resize再送入CNN，计算fc7的结果（4096的vector），作为送入SVM的特征向量
+		3.针对每类物体训练一个bounding-box regressor(BBR)
+			将训练集中的每张图片的所有RP的fc7使用SVM进行分类，采用非极大值抑制(NMS)方法获取无冗余的RP，(如果RP与GD的IOU大于0.6，则记录RP的四个参数以及与之对应的GD的四个参数，否则放弃该组数据）将GD和RP按照前文
+			的方式resize之后送入XNet，计算pool5作为特征向量(尺度为66256=9216的向量),使用岭回归的方法训练出BBR。
+
+测试
+
+	给定一个图片，使用SS方法提取2000个RP，按照前文的方式resize后，送入XNet，获取fc7和pool5
+	将fc7送入SVM得到RP的分类标签，如果得到的分类结果是背景，则直接输出结论；否则，对同一张图片的RP采用NMS方法获取无冗余的区域
+	将上述NMS之后的RP的四个参数及其对应的pool5送入指定类别的BBR，得到更接近于实际GD的边框参数。
+
+
+
+
+	

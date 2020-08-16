@@ -1,0 +1,21 @@
+Faster R-CNN
+
+introduction
+
+一.Fast R-CNN在SS阶段太费时间了
+二.Fast R-CNN用CPU 2s处理一张image，但是detection阶段又用的是GPU
+三.在算法层面上对region proposal 提出了改进，利用CNN的feature map，在上面再搭了两个额外的conv layer（RPN），Fast R-CNN的feature map只用来进行detection，作者发现也可以用来进行region proposal
+   
+RPNS：
+   	1.第一层conv，对CNN输出的feature map的每个像素编码成一个256维的vector
+   	2.对每个feature map的像素位置，将一点对应的256-d vector进行计算，输出包括两个部分：
+   		1）objectness score
+   		2）regressed bounds（4*k）  k:每个像素点有k个region proposal（文中k=9，尺度和长宽比不同，分三组，每组三个）
+   		
+   		
+
+Region Proposal Networks
+
+
+
+详细见知乎链接：https://zhuanlan.zhihu.com/p/31426458
